@@ -1,0 +1,32 @@
+# Environment and Secrets
+.env
+.env.local
+.env.*.local
+*.token
+*.pem
+*.key
+.streamlit/secrets.toml
+
+# Python Virtual Environments & Bytecode
+.venv/
+venv/
+env/
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Testing & Coverage
+.pytest_cache/
+.coverage
+htmlcov/
+
+# Logs & Temporary files
+*.log
+scratch/
+.system_generated/
+
+# OS specific
+%SystemDrive%/
+.DS_Store
+Thumbs.db
