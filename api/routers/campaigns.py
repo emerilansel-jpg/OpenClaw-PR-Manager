@@ -41,12 +41,47 @@ def create_campaign(data: CampaignCreateSchema):
     return campaigns_repo.create(payload)
 
 
+class CampaignUpdateSchema(BaseModel):
+    name: Optional[str] = Field(None, min_length=2, max_length=255)
+    story: Optional[str] = Field(None, min_length=20)
+    target_beat: Optional[List[str]] = None
+    target_outlets: Optional[List[str]] = None
+    status: Optional[str] = Field(None, pattern="^(draft|active|completed|archived)$")
+
+
 @router.get("/{campaign_id}")
 def get_campaign(campaign_id: str):
     c = campaigns_repo.get_by_id(campaign_id)
     if not c:
         raise HTTPException(status_code=404, detail="Campaign not found")
     return c
+
+
+@router.put("/{campaign_id}")
+def update_campaign(campaign_id: str, data: CampaignUpdateSchema):
+    """Update campaign details and regenerate story embedding if content changed."""
+    existing = campaigns_repo.get_by_id(campaign_id)
+    if not existing:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+
+    payload = {k: v for k, v in data.model_dump().items() if v is not None}
+    if "story" in payload or "name" in payload:
+        new_name = payload.get("name", existing.get("name", ""))
+        new_story = payload.get("story", existing.get("story", ""))
+        story_text = f"{new_name}\n{new_story}"
+        payload["story_embedding"] = ai_service.generate_embedding(story_text)
+
+    updated = campaigns_repo.update(campaign_id, payload)
+    return updated
+
+
+@router.delete("/{campaign_id}")
+def delete_campaign(campaign_id: str):
+    """Delete a campaign."""
+    ok = campaigns_repo.delete(campaign_id)
+    if not ok:
+        raise HTTPException(status_code=404, detail="Campaign not found")
+    return {"success": True, "deleted_id": campaign_id}
 
 
 @router.post("/{campaign_id}/match")

@@ -897,20 +897,21 @@ elif menu == "Campaign studio":
     with tab_c1:
         campaigns = c_repo.list_all()
 
-        with st.expander("Create a new campaign", expanded=not bool(campaigns)):
+        with st.expander("➕ Create a new campaign", expanded=not bool(campaigns)):
             with st.form("new_campaign_form"):
-                c_name = st.text_input("Campaign Name *", "Launch of Next-Gen AI Feature")
-                c_beats_str = st.text_input("Target Beats (comma separated)", "AI, Startups, Open Source, Technology")
-                c_outlets_str = st.text_input("Target Outlets (optional)", "TechCrunch, Bloomberg, Kompas")
+                col_n1, col_n2 = st.columns([3, 1])
+                c_name = col_n1.text_input("Campaign Name *", placeholder="e.g. 2026 AI Innovation Report")
+                c_status = col_n2.selectbox("Status", ["active", "draft"], index=0)
+                
+                c_beats_str = st.text_input("Target Beats (comma separated)", "AI, Technology, Startups, Healthcare")
+                c_outlets_str = st.text_input("Target Outlets (optional)", "TechCrunch, Bloomberg, The Wall Street Journal")
                 c_story = st.text_area(
                     "Press Release / Story Content *",
-                    height=180,
-                    value="Today our team is unveiling a major breakthrough in automated PR workflows. "
-                          "Our new platform leverages multi-model AI (GPT-4o & DeepSeek) and pgvector semantic matching "
-                          "to connect technology stories with journalists seamlessly.",
+                    height=160,
+                    placeholder="Provide the core announcement, breakthrough data points, and value proposition for journalists...",
                 )
 
-                if st.form_submit_button("Save Campaign", type="primary"):
+                if st.form_submit_button("🚀 Save Campaign", type="primary"):
                     if not c_name.strip() or not c_story.strip():
                         st.error("Campaign Name and Story are required.")
                     elif len(c_story.strip()) < 20:
@@ -918,27 +919,81 @@ elif menu == "Campaign studio":
                     else:
                         c_beats = [b.strip() for b in c_beats_str.split(",") if b.strip()]
                         c_outlets = [o.strip() for o in c_outlets_str.split(",") if o.strip()]
+                        
+                        story_text = f"{c_name}\n{c_story}"
+                        emb = ai_orchestrator.ai_service.generate_embedding(story_text)
+                        
                         c_repo.create({
-                            "name": c_name,
-                            "story": c_story,
+                            "name": c_name.strip(),
+                            "story": c_story.strip(),
+                            "story_embedding": emb,
                             "target_beat": c_beats,
                             "target_outlets": c_outlets,
-                            "status": "draft",
+                            "status": c_status,
                         })
-                        st.success(f"Campaign '{c_name}' created!")
+                        st.success(f"Campaign '{c_name}' created successfully!")
                         st.rerun()
 
         st.subheader("Active Campaigns")
         if campaigns:
             for camp in campaigns:
+                camp_id = str(camp.get("id"))
                 with st.container(border=True):
                     col_a, col_b = st.columns([3, 1])
-                    col_a.subheader(str(camp.get("name") or "Untitled campaign"))
-                    col_a.caption(f"Target beats · {', '.join(camp.get('target_beat') or ['Not specified'])}")
-                    story_preview = str(camp.get("story") or "")[:200]
-                    col_a.html(f'<div class="ods-campaign-story">{html.escape(story_preview)}…</div>')
+                    with col_a:
+                        st.subheader(str(camp.get("name") or "Untitled campaign"))
+                        st.caption(f"Target beats: **{', '.join(camp.get('target_beat') or ['Not specified'])}**")
+                        if camp.get("target_outlets"):
+                            st.caption(f"Target outlets: {', '.join(camp.get('target_outlets'))}")
+                        story_preview = str(camp.get("story") or "")
+                        st.html(f'<div class="ods-campaign-story" style="font-size: 0.92rem; color: #cfd6df; line-height: 1.5; margin: 0.4rem 0;">{html.escape(story_preview[:280])}{"…" if len(story_preview) > 280 else ""}</div>')
                     with col_b:
                         render_status_badge(str(camp.get("status", "draft")), size="medium")
+
+                    # Actions: Edit expander & Delete button
+                    edit_exp = st.expander(f"✏️ Edit / Delete Campaign")
+                    with edit_exp:
+                        with st.form(f"edit_campaign_form_{camp_id}"):
+                            ec1, ec2 = st.columns([3, 1])
+                            ed_name = ec1.text_input("Campaign Name", value=camp.get("name", ""))
+                            
+                            status_list = ["active", "draft", "completed", "archived"]
+                            curr_stat = str(camp.get("status", "active")).lower()
+                            stat_idx = status_list.index(curr_stat) if curr_stat in status_list else 0
+                            ed_status = ec2.selectbox("Status", status_list, index=stat_idx)
+                            
+                            ed_beats_str = st.text_input("Target Beats (comma-separated)", value=", ".join(camp.get("target_beat") or []))
+                            ed_outlets_str = st.text_input("Target Outlets (comma-separated)", value=", ".join(camp.get("target_outlets") or []))
+                            ed_story = st.text_area("Story Content", value=camp.get("story", ""), height=150)
+                            
+                            save_camp = st.form_submit_button("💾 Save Campaign Updates", type="primary")
+                            if save_camp:
+                                if not ed_name.strip() or not ed_story.strip():
+                                    st.error("Campaign Name and Story cannot be empty.")
+                                else:
+                                    e_beats = [b.strip() for b in ed_beats_str.split(",") if b.strip()]
+                                    e_outlets = [o.strip() for o in ed_outlets_str.split(",") if o.strip()]
+                                    
+                                    up_dict = {
+                                        "name": ed_name.strip(),
+                                        "story": ed_story.strip(),
+                                        "target_beat": e_beats,
+                                        "target_outlets": e_outlets,
+                                        "status": ed_status,
+                                    }
+                                    if ed_story != camp.get("story") or ed_name != camp.get("name"):
+                                        up_dict["story_embedding"] = ai_orchestrator.ai_service.generate_embedding(f"{ed_name}\n{ed_story}")
+                                    
+                                    c_repo.update(camp_id, up_dict)
+                                    st.success(f"Campaign '{ed_name}' updated successfully!")
+                                    st.rerun()
+                        
+                        # Delete button
+                        c_del1, c_del2 = st.columns([1.5, 3.5])
+                        if c_del1.button(f"🗑️ Delete Campaign", key=f"del_camp_{camp_id}", type="secondary"):
+                            c_repo.delete(camp_id)
+                            st.success("Campaign deleted.")
+                            st.rerun()
         else:
             render_empty_state(
                 title="No campaigns yet",
