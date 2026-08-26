@@ -1,10 +1,21 @@
 """OpenClaw PR Manager — refined editorial operations dashboard."""
+import os
+import sys
 import html
 from datetime import datetime, timezone
 
 import streamlit as st
 import pandas as pd
 import plotly.express as px
+
+# Sync Streamlit Cloud secrets to os.environ before loading settings
+try:
+    if hasattr(st, "secrets"):
+        for _k, _v in st.secrets.items():
+            if isinstance(_v, (str, int, float, bool)):
+                os.environ.setdefault(_k, str(_v))
+except Exception:
+    pass
 
 from config.settings import get_settings
 from db.repositories.journalists_repo import JournalistsRepository
@@ -367,19 +378,23 @@ if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
 if not st.session_state["authenticated"]:
-    col_l, col_center, col_r = st.columns([1, 2, 1])
+    st.sidebar.title("OpenClaw")
+    st.sidebar.caption("PR operations desk")
+    st.sidebar.info("🔒 Sign in to access your media intelligence desk and campaign tools.")
+
+    col_l, col_center, col_r = st.columns([1, 2.2, 1])
     with col_center:
         st.html("""
-        <div style="text-align: center; margin: 3rem 0 1.5rem;">
-            <div style="font-size: 3.2rem; margin-bottom: 0.5rem;">🦅</div>
-            <h1 style="font-size: 2.2rem; margin-bottom: 0.3rem;">OpenClaw PR Manager</h1>
+        <div style="text-align: center; margin: 2rem 0 1.2rem;">
+            <div style="font-size: 3.5rem; margin-bottom: 0.4rem;">🦅</div>
+            <h1 style="font-size: 2.2rem; margin-bottom: 0.3rem; color: #f2f0e9;">OpenClaw PR Manager</h1>
             <p style="color: #9ba3ad; font-size: 1.05rem;">Autonomous Media Relations & AI Pitching Desk</p>
         </div>
         """)
         with st.form("login_form"):
             st.markdown("#### 🔐 Sign In to Access Tools")
-            username = st.text_input("Username", value="admin", placeholder="e.g. admin")
-            password = st.text_input("Password", type="password", placeholder="Enter your password")
+            username = st.text_input("Username", value="admin", placeholder="Enter username")
+            password = st.text_input("Password", type="password", placeholder="Enter password")
             submit = st.form_submit_button("Sign In", type="primary", use_container_width=True)
 
             if submit:
@@ -393,7 +408,7 @@ if not st.session_state["authenticated"]:
                 else:
                     st.error("Invalid username or password. Please try again.")
 
-        st.caption("🔒 Access restricted to authorized team members. Default password: openclaw123")
+        st.caption("🔒 Default credentials: **admin** / **openclaw123**")
     st.stop()
 
 # Sidebar
