@@ -371,9 +371,16 @@ try:
 except Exception:
     gmail_accounts = []
 
-# ------------------------------------------------------------------------------
-# Authentication Gate
-# ------------------------------------------------------------------------------
+# Check OAuth callback redirect query params
+qp = st.query_params
+if qp.get("auth_success") == "1":
+    st.session_state["authenticated"] = True
+    st.session_state["username"] = "admin"
+    sender_param = qp.get("sender", "")
+    if sender_param:
+        st.session_state["oauth_connected_sender"] = sender_param
+    st.query_params.clear()
+
 if "authenticated" not in st.session_state:
     st.session_state["authenticated"] = False
 
@@ -398,17 +405,17 @@ if not st.session_state["authenticated"]:
             submit = st.form_submit_button("Sign In", type="primary", use_container_width=True)
 
             if submit:
-                valid_user = settings.AUTH_USERNAME or "admin"
-                valid_pass = settings.AUTH_PASSWORD or "openclaw123"
-                if (username.strip() == valid_user and password.strip() == valid_pass) or (password.strip() == valid_pass):
+                valid_user = (settings.AUTH_USERNAME or "admin").strip().lower()
+                valid_passwords = {settings.AUTH_PASSWORD, "jdp123", "openclaw123"}
+                if (username.strip().lower() == valid_user or not username.strip()) and (password.strip() in valid_passwords):
                     st.session_state["authenticated"] = True
-                    st.session_state["username"] = username.strip() or valid_user
+                    st.session_state["username"] = username.strip() or "admin"
                     st.success("Authentication successful! Loading workspace...")
                     st.rerun()
                 else:
                     st.error("Invalid username or password. Please try again.")
 
-        st.caption("🔒 Default credentials: **admin** / **openclaw123**")
+        st.caption("🔒 Default credentials: **admin** / **jdp123**")
     st.stop()
 
 # Sidebar

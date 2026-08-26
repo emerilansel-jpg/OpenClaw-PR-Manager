@@ -90,15 +90,18 @@ def google_callback(
         raise HTTPException(status_code=400, detail="Failed to exchange authorization code")
 
     sender_email = html.escape(str(tokens.get("email_address") or "Gmail account"))
-    dashboard_url = html.escape(settings.DASHBOARD_BASE_URL, quote=True)
+    dashboard_url = html.escape(f"{settings.DASHBOARD_BASE_URL.rstrip('/')}/?auth_success=1&sender={sender_email}", quote=True)
     response = responses.HTMLResponse(
         content=(
-            "<!doctype html><html><head><meta charset='utf-8'><title>Gmail connected</title>"
+            "<!doctype html><html><head><meta charset='utf-8'>"
+            f"<meta http-equiv='refresh' content='2;url={dashboard_url}'>"
+            "<title>Gmail connected</title>"
             "<style>body{font-family:system-ui;background:#0a0c0f;color:#f2f0e9;max-width:620px;"
-            "margin:12vh auto;padding:32px}a{color:#8fd6ad}</style></head><body>"
-            f"<h2>Gmail sender connected</h2><p><strong>{sender_email}</strong> can now be selected "
-            "as the sender for pitch and follow-up email.</p>"
-            f"<p><a href='{dashboard_url}'>Return to OpenClaw dashboard</a></p></body></html>"
+            "margin:12vh auto;padding:32px;text-align:center}a{color:#8fd6ad;font-weight:600;font-size:1.1rem;text-decoration:none;display:inline-block;margin-top:16px;background:#181c21;padding:10px 20px;border-radius:8px;border:1px solid #2a3037}</style></head><body>"
+            "<h2>🦅 Gmail Sender Connected!</h2>"
+            f"<p><strong style='color:#8fd6ad;font-size:1.15rem;'>{sender_email}</strong> is now authorized and connected as your email sender.</p>"
+            "<p style='color:#9ba3ad;font-size:0.9rem;'>Redirecting back to OpenClaw Dashboard in 2 seconds...</p>"
+            f"<p><a href='{dashboard_url}'>➡️ Click here if not redirected automatically</a></p></body></html>"
         )
     )
     response.delete_cookie(OAUTH_STATE_COOKIE)
