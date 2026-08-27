@@ -1,6 +1,7 @@
 """Authentication API Router for connecting Gmail sender accounts."""
 import html
 import secrets
+from typing import Optional
 
 from fastapi import APIRouter, Query, HTTPException, Request, Response, responses
 from services.email.gmail_auth import GmailOAuthManager
