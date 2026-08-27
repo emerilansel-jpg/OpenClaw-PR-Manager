@@ -1323,9 +1323,13 @@ elif menu == "Settings":
         )
         st.text_input("Google Client ID", value=settings.GOOGLE_CLIENT_ID or "Not configured", disabled=True)
         if settings.is_gmail_configured:
+            connect_href = f"{settings.API_BASE_URL.rstrip('/')}/api/v1/auth/google/connect"
+            # Support return_to for Streamlit Cloud
+            if "streamlit.app" in str(os.environ.get("DASHBOARD_BASE_URL", "")) or "streamlit.app" in str(getattr(settings, "DASHBOARD_BASE_URL", "")):
+                connect_href += "?return_to=https://openclaw-pr-manager.streamlit.app"
             st.link_button(
                 "Connect another Gmail sender",
-                f"{settings.API_BASE_URL.rstrip('/')}/api/v1/auth/google/connect",
+                connect_href,
             )
         else:
             st.warning("Configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env first.")

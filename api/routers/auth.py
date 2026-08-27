@@ -52,7 +52,7 @@ def google_login(response: Response):
 
 
 @router.get("/google/connect")
-def google_connect():
+def google_connect(request: Request, return_to: Optional[str] = Query(None)):
     """Start a browser OAuth flow for a new Gmail sender account."""
     state = _new_oauth_state()
     auth_request = auth_mgr.get_authorization_request(state=state)
@@ -64,6 +64,10 @@ def google_connect():
     url, code_verifier = auth_request
     response = responses.RedirectResponse(url=url, status_code=302)
     _set_oauth_cookies(response, state, code_verifier)
+    
+    # Store return_to destination in cookie
+    dest = return_to or request.headers.get("referer") or settings.DASHBOARD_BASE_URL
+    response.set_cookie("openclaw_oauth_return_to", dest, max_age=600, httponly=True, samesite="lax")
     return response
 
 
@@ -90,7 +94,10 @@ def google_callback(
         raise HTTPException(status_code=400, detail="Failed to exchange authorization code")
 
     sender_email = html.escape(str(tokens.get("email_address") or "Gmail account"))
-    dashboard_url = html.escape(f"{settings.DASHBOARD_BASE_URL.rstrip('/')}/?auth_success=1&sender={sender_email}", quote=True)
+    return_dest = request.cookies.get("openclaw_oauth_return_to") or settings.DASHBOARD_BASE_URL
+    clean_dest = return_dest.split("?")[0].rstrip("/")
+    dashboard_url = html.escape(f"{clean_dest}/?auth_success=1&sender={sender_email}", quote=True)
+    
     response = responses.HTMLResponse(
         content=(
             "<!doctype html><html><head><meta charset='utf-8'>"
@@ -106,6 +113,7 @@ def google_callback(
     )
     response.delete_cookie(OAUTH_STATE_COOKIE)
     response.delete_cookie(OAUTH_PKCE_COOKIE)
+    response.delete_cookie("openclaw_oauth_return_to")
     return response
 
 
