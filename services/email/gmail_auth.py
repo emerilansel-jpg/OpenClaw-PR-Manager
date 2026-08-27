@@ -68,6 +68,85 @@ class GmailOAuthManager:
         request = self.get_authorization_request(state=state)
         return request[0] if request else None
 
+    def get_streamlit_authorization_url(
+        self,
+        redirect_uri: str,
+        state: Optional[str] = None,
+    ) -> Optional[str]:
+        """Generate an OAuth URL for a Streamlit-native flow (no PKCE persistence).
+
+        The web client type carries a client_secret, so the authorization-code
+        exchange is authenticated by that secret and PKCE is optional. This lets
+        Streamlit handle the whole flow without a separate FastAPI backend: the
+        user returns to ``redirect_uri`` with ``?code=...`` which the dashboard
+        exchanges directly.
+        """
+        if not self.settings.is_gmail_configured:
+            logger.warning("Gmail OAuth client ID / Secret not configured")
+            return None
+
+        config = self._client_config()
+        config["web"]["redirect_uris"] = [redirect_uri]
+
+        flow = Flow.from_client_config(
+            config,
+            scopes=SCOPES,
+            redirect_uri=redirect_uri,
+            state=state,
+            autogenerate_code_verifier=False,
+        )
+        auth_url, _generated_state = flow.authorization_url(
+            access_type="offline",
+            include_granted_scopes="true",
+            prompt="consent",
+        )
+        return auth_url
+
+    def exchange_code_streamlit(
+        self,
+        code: str,
+        redirect_uri: str,
+    ) -> Optional[Dict[str, Any]]:
+        """Exchange an authorization code inside a Streamlit-native flow.
+
+        Uses the registered ``redirect_uri`` (the Streamlit app URL) and the
+        client_secret for the token exchange; no PKCE verifier is required.
+        """
+        if not self.settings.is_gmail_configured:
+            return None
+
+        try:
+            config = self._client_config()
+            config["web"]["redirect_uris"] = [redirect_uri]
+            flow = Flow.from_client_config(
+                config,
+                scopes=SCOPES,
+                redirect_uri=redirect_uri,
+                autogenerate_code_verifier=False,
+            )
+            flow.fetch_token(code=code)
+            credentials = flow.credentials
+
+            email_address = self._fetch_authorized_email(credentials)
+            if not email_address:
+                logger.error("OAuth succeeded but authorized Google email could not be verified")
+                return None
+            account_key = email_address.strip().lower()
+
+            token_data = {
+                "user_id": account_key,
+                "access_token": credentials.token,
+                "refresh_token": credentials.refresh_token,
+                "token_expiry": credentials.expiry.isoformat() if credentials.expiry else None,
+                "scopes": credentials.scopes,
+                "email_address": account_key,
+            }
+            self.save_tokens(account_key, token_data)
+            return token_data
+        except Exception as e:
+            logger.error("Streamlit OAuth token exchange failed: %s", e)
+            return None
+
     @staticmethod
     def _fetch_authorized_email(credentials: Credentials) -> Optional[str]:
         """Read the verified Google identity attached to the granted token."""

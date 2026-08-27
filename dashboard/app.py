@@ -355,6 +355,33 @@ def integration_row(name: str, configured: bool, configured_label: str, fallback
 settings = get_settings()
 seed_initial_data()
 
+
+def _resolve_dashboard_base_url() -> str:
+    """Derive this app's public base URL for OAuth redirect.
+
+    Priority:
+    1. Explicit DASHBOARD_BASE_URL from env/Secrets (if non-localhost).
+    2. Host header from Streamlit Cloud request (always correct on deploy).
+    3. DASHBOARD_BASE_URL as-is (localhost dev fallback).
+    """
+    candidates: list[str] = []
+    explicit = (settings.DASHBOARD_BASE_URL or "").strip()
+    if explicit:
+        candidates.append(explicit)
+    try:
+        ctx = getattr(st, "context", None)
+        if ctx and hasattr(ctx, "headers"):
+            host = ctx.headers.get("Host", "")
+            proto = ctx.headers.get("X-Forwarded-Proto", "https")
+            if host:
+                candidates.append(f"{proto}://{host}")
+    except Exception:
+        pass
+    for c in candidates:
+        if c.startswith("https://"):
+            return c.rstrip("/") + "/"
+    return (candidates[0] if candidates else "http://localhost:8501").rstrip("/") + "/"
+
 j_repo = JournalistsRepository()
 c_repo = CampaignsRepository()
 o_repo = OutreachRepository()
@@ -373,6 +400,31 @@ except Exception:
 
 # Check OAuth callback redirect query params
 qp = st.query_params
+
+# Streamlit-native OAuth: Google redirects back here with ?code=...&state=...
+# We exchange the code directly (no FastAPI backend needed).
+if qp.get("code") and not qp.get("auth_success"):
+    oauth_redirect_uri = _resolve_dashboard_base_url()
+    if oauth_redirect_uri:
+        with st.spinner("Connecting your Gmail account..."):
+            try:
+                tokens = gmail_auth.exchange_code_streamlit(
+                    code=qp.get("code"),
+                    redirect_uri=oauth_redirect_uri,
+                )
+            except Exception as exc:
+                tokens = None
+                st.error(f"Gmail connection failed: {exc}")
+        if tokens:
+            st.session_state["authenticated"] = True
+            st.session_state["username"] = "admin"
+            st.session_state["oauth_connected_sender"] = tokens.get("email_address", "")
+            try:
+                gmail_accounts = gmail_auth.list_connected_accounts()
+            except Exception:
+                pass
+        st.query_params.clear()
+
 if qp.get("auth_success") == "1":
     st.session_state["authenticated"] = True
     st.session_state["username"] = "admin"
@@ -1035,10 +1087,10 @@ elif menu == "Campaign studio":
             else:
                 st.warning("Connect at least one Gmail account before sending real outreach.")
                 if settings.is_gmail_configured:
-                    st.link_button(
-                        "Connect Gmail sender",
-                        f"{settings.API_BASE_URL.rstrip('/')}/api/v1/auth/google/connect",
-                    )
+                    _ru = _resolve_dashboard_base_url()
+                    _connect = gmail_auth.get_streamlit_authorization_url(redirect_uri=_ru) if _ru else None
+                    if _connect:
+                        st.link_button("Connect Gmail sender", _connect)
 
             selected_campaign_name = st.selectbox("Select Campaign", [c["name"] for c in campaigns])
             selected_campaign = next(c for c in campaigns if c["name"] == selected_campaign_name)
@@ -1323,14 +1375,19 @@ elif menu == "Settings":
         )
         st.text_input("Google Client ID", value=settings.GOOGLE_CLIENT_ID or "Not configured", disabled=True)
         if settings.is_gmail_configured:
-            connect_href = f"{settings.API_BASE_URL.rstrip('/')}/api/v1/auth/google/connect"
-            # Support return_to for Streamlit Cloud
-            if "streamlit.app" in str(os.environ.get("DASHBOARD_BASE_URL", "")) or "streamlit.app" in str(getattr(settings, "DASHBOARD_BASE_URL", "")):
-                connect_href += "?return_to=https://openclaw-pr-manager.streamlit.app"
-            st.link_button(
-                "Connect another Gmail sender",
-                connect_href,
-            )
+            # Streamlit-native OAuth: redirect back to this app directly (no FastAPI backend).
+            _redirect_uri = _resolve_dashboard_base_url()
+            connect_href = gmail_auth.get_streamlit_authorization_url(redirect_uri=_redirect_uri) if _redirect_uri else None
+            if connect_href:
+                st.link_button(
+                    "Connect another Gmail sender",
+                    connect_href,
+                )
+                st.caption(
+                    f"Make sure this exact URL is in your Google Console **Authorized redirect URIs**: `{_redirect_uri}`"
+                )
+            else:
+                st.warning("Set DASHBOARD_BASE_URL in Streamlit Secrets to your app URL to enable Gmail connect.")
         else:
             st.warning("Configure GOOGLE_CLIENT_ID and GOOGLE_CLIENT_SECRET in .env first.")
 
